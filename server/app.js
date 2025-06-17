@@ -118,7 +118,8 @@ app.post('/api/exportar', (req, res) => {
       if (!r.selfCheckParam) return '-';
       const match = r.selfCheckParam.match(/vBat=\d+mV\((\d+)%\)/);
       return match ? match[1] + '%' : '-';
-    })()
+    })(),
+    'STATUS 3S': r.status3S || '-'
   }));
   const ws = XLSX.utils.json_to_sheet([]);
   XLSX.utils.sheet_add_aoa(ws, [[`Relatório gerado em: ${dataHora} (GMT-3 Brasília)`]], {origin: 'A1'});

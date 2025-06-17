@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import './App.css'
+import * as XLSX from 'xlsx';
 
 // Função para extrair porcentagem da bateria de selfCheckParam
 function getBatteryPercent(selfCheckParam) {
@@ -73,6 +74,7 @@ function App() {
   const [emailsDestinatarios, setEmailsDestinatarios] = useState('')
   const [tipoAgendamento, setTipoAgendamento] = useState('intervalo')
   const [horariosFixos, setHorariosFixos] = useState('')
+  const [status3SMap, setStatus3SMap] = useState({});
 
   // Checa status do monitoramento ao carregar
   useEffect(() => {
@@ -118,10 +120,11 @@ function App() {
 
   async function exportarExcel() {
     if (results.length === 0 || !versaoAtual) return
-    // Adiciona status de atualização
+    // Adiciona status de atualização e STATUS 3S
     const exportData = results.map(r => ({
       ...r,
-      atualizado: r.version === versaoAtual ? 'Sim' : 'Não'
+      atualizado: r.version === versaoAtual ? 'Sim' : 'Não',
+      status3S: status3SMap[r.imei] || '-'
     }))
     const response = await fetch('http://localhost:3001/api/exportar', {
       method: 'POST',
@@ -297,6 +300,36 @@ function App() {
     return modeStr || '-';
   }
 
+  // Função para processar upload do Excel
+  function handleExcelUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const data = new Uint8Array(evt.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheet = workbook.Sheets['Não atualizado'];
+      if (!sheet) return alert('Aba "Não atualizado" não encontrada!');
+      const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+      if (!json.length) return alert('Planilha vazia!');
+      // Procura colunas
+      const header = json[0];
+      const imeiIdx = header.findIndex(h => h && h.toString().toUpperCase().includes('IMEI'));
+      const statusIdx = header.findIndex(h => h && h.toString().toUpperCase().includes('STATUS 3S'));
+      if (imeiIdx === -1 || statusIdx === -1) return alert('Colunas IMEI ou STATUS 3S não encontradas!');
+      const map = {};
+      for (let i = 1; i < json.length; i++) {
+        const row = json[i];
+        const imei = row[imeiIdx]?.toString().trim();
+        const status = row[statusIdx]?.toString().trim();
+        if (imei && status) map[imei] = status;
+      }
+      setStatus3SMap(map);
+      alert('Status 3S importado com sucesso!');
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
   return (
     <div className="container">
       {/* Visão Tática só aparece se houver dados */}
@@ -423,12 +456,14 @@ function App() {
                 <th style={{ border: '1px solid #ccc', padding: 8 }}>Online nas últimas 24h?</th>
                 <th style={{ border: '1px solid #ccc', padding: 8 }}>MODE</th>
                 <th style={{ border: '1px solid #ccc', padding: 8 }}>Bateria</th>
+                <th style={{ border: '1px solid #ccc', padding: 8 }}>STATUS 3S</th>
               </tr>
             </thead>
             <tbody>
               {results.map((r, idx) => {
                 const percent = getBatteryPercent(r.selfCheckParam);
                 const modeDebug = parseMode(r.mode);
+                const status3S = status3SMap[r.imei] || '-';
                 return (
                   <tr key={r.imei + idx}>
                     <td style={{ border: '1px solid #ccc', padding: 8 }}>{r.imei}</td>
@@ -443,6 +478,7 @@ function App() {
                         {percent !== null ? percent + '%' : '-'}
                       </div>
                     </td>
+                    <td style={{ border: '1px solid #ccc', padding: 8 }}>{status3S}</td>
                   </tr>
                 );
               })}
@@ -450,6 +486,13 @@ function App() {
           </table>
         </div>
       )}
+      {/* Botão de upload do Excel para STATUS 3S */}
+      <div style={{ marginBottom: 16 }}>
+        <label style={{ background: '#1976d2', color: '#fff', padding: '8px 16px', borderRadius: 4, cursor: 'pointer' }}>
+          Importar STATUS 3S (Excel)
+          <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleExcelUpload} />
+        </label>
+      </div>
     </div>
   )
 }
