@@ -13,7 +13,7 @@ dayjs.extend(timezone);
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '20mb' }));
 
 const API_URL = 'http://fota-api.jimicloud.com';
 const APP_KEY = 'Jimiiotbrasil';
@@ -112,7 +112,13 @@ app.post('/api/exportar', (req, res) => {
     'Versão': r.version,
     'Atualizado?': r.atualizado || (r.version === (r.versaoAtual || '') ? 'Sim' : 'Não'),
     'Última vez online (GMT-3 Brasília)': r.lastime ? dayjs(r.lastime).tz('America/Sao_Paulo').format('DD/MM/YYYY HH:mm:ss') : '-',
-    'Online nas últimas 24h?': r.online24h ? 'Sim' : 'Não'
+    'Online nas últimas 24h?': r.online24h ? 'Sim' : 'Não',
+    'MODE': r.mode || '-',
+    'Bateria (%)': (() => {
+      if (!r.selfCheckParam) return '-';
+      const match = r.selfCheckParam.match(/vBat=\d+mV\((\d+)%\)/);
+      return match ? match[1] + '%' : '-';
+    })()
   }));
   const ws = XLSX.utils.json_to_sheet([]);
   XLSX.utils.sheet_add_aoa(ws, [[`Relatório gerado em: ${dataHora} (GMT-3 Brasília)`]], {origin: 'A1'});

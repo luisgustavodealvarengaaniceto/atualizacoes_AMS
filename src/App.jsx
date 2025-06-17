@@ -1,5 +1,62 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import './App.css'
+
+// Função para extrair porcentagem da bateria de selfCheckParam
+function getBatteryPercent(selfCheckParam) {
+  if (!selfCheckParam) return null;
+  const match = selfCheckParam.match(/vBat=\d+mV\((\d+)%\)/);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+// Componente visual de bateria estilo Flutter
+function BatteryIcon({ percent, segmentHeight = 12, segmentWidth = 28 }) {
+  const level = percent == null ? 0 : Math.ceil((percent / 100) * 5);
+  let color = '#f44336';
+  if (percent >= 50) color = '#4caf50';
+  else if (percent >= 20) color = '#ffeb3b';
+  const borderColor = '#fff';
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginRight: 4 }}>
+      <div style={{
+        width: segmentWidth * 0.5,
+        height: segmentHeight * 0.6,
+        background: level >= 5 ? color : 'transparent',
+        borderTop: `1px solid ${borderColor}`,
+        borderRight: `1px solid ${borderColor}`,
+        borderLeft: `1px solid ${borderColor}`
+      }} />
+      <div style={{
+        width: segmentWidth,
+        height: segmentHeight,
+        background: level >= 4 ? color : 'transparent',
+        borderRadius: '5px 5px 0 0',
+        border: `1px solid ${borderColor}`
+      }} />
+      <div style={{
+        width: segmentWidth,
+        height: segmentHeight,
+        background: level >= 3 ? color : 'transparent',
+        borderBottom: `1px solid ${borderColor}`,
+        borderRight: `1px solid ${borderColor}`,
+        borderLeft: `1px solid ${borderColor}`
+      }} />
+      <div style={{
+        width: segmentWidth,
+        height: segmentHeight,
+        background: level >= 2 ? color : 'transparent',
+        borderRight: `1px solid ${borderColor}`,
+        borderLeft: `1px solid ${borderColor}`
+      }} />
+      <div style={{
+        width: segmentWidth,
+        height: segmentHeight,
+        background: level >= 1 ? color : 'transparent',
+        borderRadius: '0 0 5px 5px',
+        border: `1px solid ${borderColor}`
+      }} />
+    </div>
+  );
+}
 
 function App() {
   const [imeisText, setImeisText] = useState('')
@@ -139,77 +196,142 @@ function App() {
     }
   }
 
-  // Cálculo para gráfico
-  const total = results.length
-  const atualizados = results.filter(r => r.version === versaoAtual).length
-  const naoAtualizados = total - atualizados
+  // Indicadores para visão tática
+  const total = results.length;
+  const atualizados = results.filter(r => r.version === versaoAtual).length;
+  const naoAtualizados = total - atualizados;
+  const online24h = results.filter(r => r.online24h).length;
+  const bateriaDistribuicao = useMemo(() => {
+    // Faixas: 0-19, 20-39, 40-59, 60-79, 80-100
+    const faixas = [0, 0, 0, 0, 0];
+    results.forEach(r => {
+      const p = getBatteryPercent(r.selfCheckParam);
+      if (p === null) return;
+      if (p < 20) faixas[0]++;
+      else if (p < 40) faixas[1]++;
+      else if (p < 60) faixas[2]++;
+      else if (p < 80) faixas[3]++;
+      else faixas[4]++;
+    });
+    return faixas;
+  }, [results]);
+  const mediaBateria = results.length > 0 ? Math.round(results.map(r => getBatteryPercent(r.selfCheckParam) || 0).reduce((a, b) => a + b, 0) / results.length) : 0;
 
-  // Função para extrair porcentagem da bateria de selfCheckParam
-  function getBatteryPercent(selfCheckParam) {
-    if (!selfCheckParam) return null;
-    // Procura por vBat=xxxxmV(XX%)
-    const match = selfCheckParam.match(/vBat=\d+mV\((\d+)%\)/);
-    return match ? parseInt(match[1], 10) : null;
+  // Função para gerar cores para pizza
+  const pizzaColors = ['#f44336', '#ff9800', '#ffeb3b', '#8bc34a', '#2196f3'];
+  const pizzaLabels = ['0-19%', '20-39%', '40-59%', '60-79%', '80-100%'];
+  function getPieSegments(data) {
+    const sum = data.reduce((a, b) => a + b, 0);
+    let acc = 0;
+    return data.map((val, i) => {
+      const start = acc / sum;
+      acc += val;
+      const end = acc / sum;
+      return { start, end, color: pizzaColors[i], label: pizzaLabels[i], value: val };
+    });
+  }
+  function describeArc(cx, cy, r, start, end) {
+    const startAngle = 2 * Math.PI * start - Math.PI / 2;
+    const endAngle = 2 * Math.PI * end - Math.PI / 2;
+    const x1 = cx + r * Math.cos(startAngle);
+    const y1 = cy + r * Math.sin(startAngle);
+    const x2 = cx + r * Math.cos(endAngle);
+    const y2 = cy + r * Math.sin(endAngle);
+    const largeArc = end - start > 0.5 ? 1 : 0;
+    return `M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${largeArc} 1 ${x2},${y2} Z`;
   }
 
-  // Componente visual de bateria estilo Flutter
-  function BatteryIcon({ percent, segmentHeight = 12, segmentWidth = 28 }) {
-    const level = percent == null ? 0 : Math.ceil((percent / 100) * 5);
-    let color = '#f44336';
-    if (percent >= 50) color = '#4caf50';
-    else if (percent >= 20) color = '#ffeb3b';
-    const borderColor = '#fff';
+  // Função para gráfico de pizza profissional (com borda, sombra e legenda)
+  function PieChart({ segments, cx, cy, r, legend, centerLabel, centerValue }) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginRight: 4 }}>
-        <div style={{
-          width: segmentWidth * 0.5,
-          height: segmentHeight * 0.6,
-          background: level >= 5 ? color : 'transparent',
-          borderTop: `1px solid ${borderColor}`,
-          borderRight: `1px solid ${borderColor}`,
-          borderLeft: `1px solid ${borderColor}`
-        }} />
-        <div style={{
-          width: segmentWidth,
-          height: segmentHeight,
-          background: level >= 4 ? color : 'transparent',
-          borderRadius: '5px 5px 0 0',
-          border: `1px solid ${borderColor}`
-        }} />
-        <div style={{
-          width: segmentWidth,
-          height: segmentHeight,
-          background: level >= 3 ? color : 'transparent',
-          borderBottom: `1px solid ${borderColor}`,
-          borderRight: `1px solid ${borderColor}`,
-          borderLeft: `1px solid ${borderColor}`
-        }} />
-        <div style={{
-          width: segmentWidth,
-          height: segmentHeight,
-          background: level >= 2 ? color : 'transparent',
-          borderRight: `1px solid ${borderColor}`,
-          borderLeft: `1px solid ${borderColor}`
-        }} />
-        <div style={{
-          width: segmentWidth,
-          height: segmentHeight,
-          background: level >= 1 ? color : 'transparent',
-          borderRadius: '0 0 5px 5px',
-          border: `1px solid ${borderColor}`
-        }} />
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <svg width={cx * 2} height={cy * 2} style={{ filter: 'drop-shadow(0 2px 8px #0008)' }}>
+          <circle cx={cx} cy={cy} r={r} fill="#222" />
+          {segments.map((seg, i) => (
+            seg.value > 0 && (
+              <path key={i} d={describeArc(cx, cy, r, seg.start, seg.end)} fill={seg.color} stroke="#fff" strokeWidth="2" />
+            )
+          ))}
+          {/* Números em cada fatia */}
+          {segments.map((seg, i) => {
+            if (seg.value === 0) return null;
+            const angle = 2 * Math.PI * (seg.start + (seg.end - seg.start) / 2) - Math.PI / 2;
+            const x = cx + (r - 25) * Math.cos(angle);
+            const y = cy + (r - 25) * Math.sin(angle);
+            return (
+              <text key={i} x={x} y={y} fill="#222" fontSize="16" textAnchor="middle" dominantBaseline="middle" fontWeight="bold">{seg.value}</text>
+            );
+          })}
+          {/* Label central */}
+          {centerLabel && (
+            <text x={cx} y={cy - 8} fill="#fff" fontSize="16" textAnchor="middle">{centerLabel}</text>
+          )}
+          {centerValue && (
+            <text x={cx} y={cy + 16} fill="#fff" fontSize="22" textAnchor="middle" fontWeight="bold">{centerValue}</text>
+          )}
+        </svg>
+        {legend && (
+          <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+            {segments.map((seg, i) => seg.value > 0 && (
+              <span key={i} style={{ color: seg.color, fontSize: 13, background: '#111', borderRadius: 4, padding: '2px 8px', border: `1px solid ${seg.color}` }}>{seg.label}</span>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
 
-  // Exibe o mode sem tratamento
+  // Dados para gráficos de pizza
+  const statusAtualizacaoSegments = [
+    { value: atualizados, color: '#4caf50', label: 'Atualizados', start: 0, end: total ? atualizados/total : 0 },
+    { value: naoAtualizados, color: '#f44336', label: 'Não Atualizados', start: total ? atualizados/total : 0, end: 1 }
+  ];
+  const onlineSegments = [
+    { value: online24h, color: '#2196f3', label: 'Online 24h', start: 0, end: total ? online24h/total : 0 },
+    { value: total - online24h, color: '#888', label: 'Offline', start: total ? online24h/total : 0, end: 1 }
+  ];
+  const bateriaSegments = getPieSegments(bateriaDistribuicao);
+
+  // Função para exibir o mode sem tratamento
   function parseMode(modeStr) {
     return modeStr || '-';
   }
 
   return (
     <div className="container">
-      <h1>Consulta de Versão dos Equipamentos 3S</h1>
+      {/* Visão Tática só aparece se houver dados */}
+      {results.length > 0 && (
+        <div style={{ background: '#222', color: '#fff', padding: 20, borderRadius: 8, marginBottom: 24 }}>
+          <h2 style={{ marginTop: 0, textAlign: 'center' }}>Visão Tática</h2>
+          <div style={{ display: 'flex', gap: 48, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center' }}>
+            {/* Pizza de Status de Atualização */}
+            <div style={{ textAlign: 'center' }}>
+              <b>Status de Atualização</b>
+              <PieChart segments={statusAtualizacaoSegments} cx={80} cy={80} r={65} legend centerLabel="Atualizados" centerValue={atualizados + '/' + total} />
+            </div>
+            {/* Pizza de Online 24h */}
+            <div style={{ textAlign: 'center' }}>
+              <b>Online 24h</b>
+              <PieChart segments={onlineSegments} cx={80} cy={80} r={65} legend centerLabel="Online" centerValue={online24h + '/' + total} />
+            </div>
+            {/* Pizza de Distribuição da Bateria */}
+            <div style={{ textAlign: 'center' }}>
+              <b>Distribuição da Bateria</b>
+              <PieChart segments={bateriaSegments} cx={90} cy={90} r={75} legend />
+            </div>
+            {/* Média da Bateria */}
+            <div style={{ textAlign: 'center' }}>
+              <b>Média da Bateria</b>
+              <div style={{ display: 'flex', alignItems: 'center', fontSize: 24, marginTop: 8, justifyContent: 'center' }}>
+                <BatteryIcon percent={mediaBateria} />
+                <span style={{ marginLeft: 8 }}>{mediaBateria > 0 ? mediaBateria + '%' : '-'}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Visão Operacional */}
+      <h2 style={{ marginTop: 0 }}>Visão Operacional</h2>
       <textarea
         rows={6}
         placeholder="Cole os IMEIs aqui, um por linha ou separados por vírgula"
@@ -326,18 +448,6 @@ function App() {
               })}
             </tbody>
           </table>
-          <div style={{ marginTop: 32 }}>
-            <h3>Status de Atualização</h3>
-            <svg width="320" height="180">
-              <rect x="10" y="40" width="120" height="30" fill="#4caf50" />
-              <text x="15" y="60" fill="#fff">Atualizados: {atualizados}</text>
-              <rect x="10" y="90" width="120" height="30" fill="#f44336" />
-              <text x="15" y="110" fill="#fff">Não Atualizados: {naoAtualizados}</text>
-            </svg>
-            <div style={{ marginTop: 8 }}>
-              <b>Total:</b> {total}
-            </div>
-          </div>
         </div>
       )}
     </div>
