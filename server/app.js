@@ -87,6 +87,8 @@ app.post('/api/consultar', async (req, res) => {
             lastime: device.lastime || device.lastTime || '',
             online24h: isOnlineUltimas24h(device.lastime || device.lastTime || ''),
             atualizado: versaoAtual ? (extractVersion(device) === versaoAtual ? 'Sim' : 'Não') : '',
+            mode: device.mode, // Adicionado
+            selfCheckParam: device.selfCheckParam // Adicionado
           });
         }
       } catch (loteErr) {

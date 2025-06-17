@@ -144,6 +144,69 @@ function App() {
   const atualizados = results.filter(r => r.version === versaoAtual).length
   const naoAtualizados = total - atualizados
 
+  // Função para extrair porcentagem da bateria de selfCheckParam
+  function getBatteryPercent(selfCheckParam) {
+    if (!selfCheckParam) return null;
+    // Procura por vBat=xxxxmV(XX%)
+    const match = selfCheckParam.match(/vBat=\d+mV\((\d+)%\)/);
+    return match ? parseInt(match[1], 10) : null;
+  }
+
+  // Componente visual de bateria estilo Flutter
+  function BatteryIcon({ percent, segmentHeight = 12, segmentWidth = 28 }) {
+    const level = percent == null ? 0 : Math.ceil((percent / 100) * 5);
+    let color = '#f44336';
+    if (percent >= 50) color = '#4caf50';
+    else if (percent >= 20) color = '#ffeb3b';
+    const borderColor = '#fff';
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginRight: 4 }}>
+        <div style={{
+          width: segmentWidth * 0.5,
+          height: segmentHeight * 0.6,
+          background: level >= 5 ? color : 'transparent',
+          borderTop: `1px solid ${borderColor}`,
+          borderRight: `1px solid ${borderColor}`,
+          borderLeft: `1px solid ${borderColor}`
+        }} />
+        <div style={{
+          width: segmentWidth,
+          height: segmentHeight,
+          background: level >= 4 ? color : 'transparent',
+          borderRadius: '5px 5px 0 0',
+          border: `1px solid ${borderColor}`
+        }} />
+        <div style={{
+          width: segmentWidth,
+          height: segmentHeight,
+          background: level >= 3 ? color : 'transparent',
+          borderBottom: `1px solid ${borderColor}`,
+          borderRight: `1px solid ${borderColor}`,
+          borderLeft: `1px solid ${borderColor}`
+        }} />
+        <div style={{
+          width: segmentWidth,
+          height: segmentHeight,
+          background: level >= 2 ? color : 'transparent',
+          borderRight: `1px solid ${borderColor}`,
+          borderLeft: `1px solid ${borderColor}`
+        }} />
+        <div style={{
+          width: segmentWidth,
+          height: segmentHeight,
+          background: level >= 1 ? color : 'transparent',
+          borderRadius: '0 0 5px 5px',
+          border: `1px solid ${borderColor}`
+        }} />
+      </div>
+    );
+  }
+
+  // Exibe o mode sem tratamento
+  function parseMode(modeStr) {
+    return modeStr || '-';
+  }
+
   return (
     <div className="container">
       <h1>Consulta de Versão dos Equipamentos 3S</h1>
@@ -236,18 +299,31 @@ function App() {
                 <th style={{ border: '1px solid #ccc', padding: 8 }}>Atualizado?</th>
                 <th style={{ border: '1px solid #ccc', padding: 8 }}>Última vez online</th>
                 <th style={{ border: '1px solid #ccc', padding: 8 }}>Online nas últimas 24h?</th>
+                <th style={{ border: '1px solid #ccc', padding: 8 }}>MODE</th>
+                <th style={{ border: '1px solid #ccc', padding: 8 }}>Bateria</th>
               </tr>
             </thead>
             <tbody>
-              {results.map((r, idx) => (
-                <tr key={r.imei + idx}>
-                  <td style={{ border: '1px solid #ccc', padding: 8 }}>{r.imei}</td>
-                  <td style={{ border: '1px solid #ccc', padding: 8 }}>{r.version}</td>
-                  <td style={{ border: '1px solid #ccc', padding: 8 }}>{versaoAtual && r.version === versaoAtual ? 'Sim' : 'Não'}</td>
-                  <td style={{ border: '1px solid #ccc', padding: 8 }}>{r.lastime ? new Date(r.lastime).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' (GMT-3 Brasília)' : '-'}</td>
-                  <td style={{ border: '1px solid #ccc', padding: 8 }}>{r.online24h ? 'Sim' : 'Não'}</td>
-                </tr>
-              ))}
+              {results.map((r, idx) => {
+                const percent = getBatteryPercent(r.selfCheckParam);
+                const modeDebug = parseMode(r.mode);
+                return (
+                  <tr key={r.imei + idx}>
+                    <td style={{ border: '1px solid #ccc', padding: 8 }}>{r.imei}</td>
+                    <td style={{ border: '1px solid #ccc', padding: 8 }}>{r.version}</td>
+                    <td style={{ border: '1px solid #ccc', padding: 8 }}>{versaoAtual && r.version === versaoAtual ? 'Sim' : 'Não'}</td>
+                    <td style={{ border: '1px solid #ccc', padding: 8 }}>{r.lastime ? new Date(r.lastime).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' (GMT-3 Brasília)' : '-'}</td>
+                    <td style={{ border: '1px solid #ccc', padding: 8 }}>{r.online24h ? 'Sim' : 'Não'}</td>
+                    <td style={{ border: '1px solid #ccc', padding: 8 }}>{modeDebug}</td>
+                    <td style={{ border: '1px solid #ccc', padding: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center' }}>
+                        <BatteryIcon percent={percent} />
+                        {percent !== null ? percent + '%' : '-'}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           <div style={{ marginTop: 32 }}>
