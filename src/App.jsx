@@ -75,6 +75,8 @@ function App() {
   const [tipoAgendamento, setTipoAgendamento] = useState('intervalo')
   const [horariosFixos, setHorariosFixos] = useState('')
   const [status3SMap, setStatus3SMap] = useState({});
+  const [progressoConsulta, setProgressoConsulta] = useState(''); // Novo estado para progresso
+  const [imeisFalharam, setImeisFalharam] = useState([]); // Estado para IMEIs que falharam
 
   // Checa status do monitoramento ao carregar
   useEffect(() => {
@@ -97,24 +99,68 @@ function App() {
   async function consultar() {
     setError('')
     setResults([])
+    setProgressoConsulta('')
+    setImeisFalharam([]) // Limpa IMEIs que falharam anteriormente
+    
     const imeis = parseImeis(imeisText)
     if (imeis.length === 0) {
       setError('Insira ao menos um IMEI.')
       return
     }
+
     setLoading(true)
+    
+    // Mostra informação sobre quantidade de IMEIs e lotes de 50
+    const totalLotes = Math.ceil(imeis.length / 50)
+    if (totalLotes > 1) {
+      setProgressoConsulta(`Consultando ${imeis.length} IMEIs em ${totalLotes} lotes de 50 IMEIs. Sistema otimizado para API Jimi com fallback automático...`)
+    } else {
+      setProgressoConsulta(`Consultando ${imeis.length} IMEIs...`)
+    }
+
     try {
       const response = await fetch('http://localhost:3001/api/consultar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imeis })
+        body: JSON.stringify({ imeis, versaoAtual })
       })
+      
       const data = await response.json()
-      if (data.results) setResults(data.results)
-      else setError(data.error || 'Erro desconhecido')
+      
+      if (data.results) {
+        setResults(data.results)
+        setProgressoConsulta('')
+        
+        // Armazena IMEIs que falharam, se houver
+        if (data.imeisFalharam && data.imeisFalharam.length > 0) {
+          setImeisFalharam(data.imeisFalharam)
+        }
+        
+        // Mostra estatísticas do resultado
+        const comErro = data.results.filter(r => r.version === 'ERRO' || r.version === 'NÃO ENCONTRADO').length
+        const sucessos = data.results.length - comErro
+        
+        // Verifica se há IMEIs que falharam na verificação individual
+        let mensagemFinal = ''
+        if (data.imeisFalharam && data.imeisFalharam.length > 0) {
+          mensagemFinal = `Consulta finalizada: ${sucessos} sucessos, ${comErro} com erro/não encontrados. 
+          ⚠️ ${data.imeisFalharam.length} IMEIs falharam na verificação individual: ${data.imeisFalharam.join(', ')}`
+        } else if (comErro > 0) {
+          mensagemFinal = `Consulta finalizada: ${sucessos} sucessos, ${comErro} com erro/não encontrados. ${totalLotes > 1 ? `Processados em ${totalLotes} lotes.` : ''}`
+        } else {
+          mensagemFinal = `Consulta finalizada com sucesso: ${sucessos} IMEIs processados. ${totalLotes > 1 ? `Processados em ${totalLotes} lotes.` : ''}`
+        }
+        
+        setError(mensagemFinal)
+      } else {
+        setError(data.error || 'Erro desconhecido')
+        setProgressoConsulta('')
+      }
     } catch (e) {
-      setError('Erro ao consultar backend.')
+      setError('Erro ao consultar backend: ' + e.message)
+      setProgressoConsulta('')
     }
+    
     setLoading(false)
   }
 
@@ -365,6 +411,23 @@ function App() {
       )}
       {/* Visão Operacional */}
       <h2 style={{ marginTop: 0 }}>Visão Operacional</h2>
+      
+      {/* Dica para muitos IMEIs */}
+      {imeisText && parseImeis(imeisText).length > 20 && (
+        <div style={{ 
+          background: '#fff3cd', 
+          border: '1px solid #ffecb5', 
+          padding: 12, 
+          borderRadius: 4, 
+          marginBottom: 12,
+          color: '#856404'
+        }}>
+          <strong>💡 Dica:</strong> Você está consultando {parseImeis(imeisText).length} IMEIs. 
+          O processo usa lotes de 50 IMEIs com sistema de fallback para 10 IMEIs se necessário (baseado em análise da API Jimi). 
+          Para 1800 IMEIs, isso levará aproximadamente 15-25 minutos com delays de segurança.
+        </div>
+      )}
+      
       <textarea
         rows={6}
         placeholder="Cole os IMEIs aqui, um por linha ou separados por vírgula"
@@ -427,6 +490,33 @@ function App() {
           Exportar Excel
         </button>
       </div>
+      
+      {/* Exibe progresso da consulta */}
+      {progressoConsulta && (
+        <div style={{ 
+          background: '#e3f2fd', 
+          border: '1px solid #2196f3', 
+          padding: 12, 
+          borderRadius: 4, 
+          marginTop: 12,
+          color: '#1976d2'
+        }}>
+          {progressoConsulta}
+        </div>
+      )}
+      
+      {error && (
+        <div style={{ 
+          color: error.includes('sucesso') ? '#4caf50' : '#f44336', 
+          marginTop: 12,
+          padding: 8,
+          background: error.includes('sucesso') ? '#e8f5e8' : '#ffeaea',
+          borderRadius: 4,
+          border: `1px solid ${error.includes('sucesso') ? '#4caf50' : '#f44336'}`
+        }}>
+          {error}
+        </div>
+      )}
       <div style={{ marginBottom: 16 }}>
         {monitorando ? (
           <button onClick={desativarMonitoramento} style={{ background: '#f44336', color: '#fff', marginRight: 8 }}>
@@ -443,9 +533,41 @@ function App() {
         Enviar E-mail Manual
       </button>
       {emailStatus && <div style={{ color: emailStatus.includes('sucesso') ? 'green' : 'red', marginBottom: 8 }}>{emailStatus}</div>}
-      {error && <div style={{ color: 'red', marginTop: 12 }}>{error}</div>}
       {results.length > 0 && (
         <div style={{ marginTop: 24 }}>
+          {/* Resumo da consulta */}
+          <div style={{ 
+            background: '#f5f5f5', 
+            padding: 16, 
+            borderRadius: 8, 
+            marginBottom: 16,
+            border: '1px solid #ddd'
+          }}>
+            <h3 style={{ marginTop: 0, marginBottom: 12 }}>📊 Resumo da Consulta</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+              <div>
+                <strong>Total de IMEIs:</strong> {results.length}
+              </div>
+              <div>
+                <strong>Sucessos:</strong> {results.filter(r => r.version !== 'ERRO' && r.version !== 'NÃO ENCONTRADO').length}
+              </div>
+              <div>
+                <strong>Erros:</strong> {results.filter(r => r.version === 'ERRO').length}
+              </div>
+              <div>
+                <strong>Não encontrados:</strong> {results.filter(r => r.version === 'NÃO ENCONTRADO').length}
+              </div>
+              {versaoAtual && (
+                <div>
+                  <strong>Atualizados:</strong> {results.filter(r => r.version === versaoAtual).length}
+                </div>
+              )}
+              <div>
+                <strong>Online 24h:</strong> {results.filter(r => r.online24h).length}
+              </div>
+            </div>
+          </div>
+          
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
@@ -464,21 +586,34 @@ function App() {
                 const percent = getBatteryPercent(r.selfCheckParam);
                 const modeDebug = parseMode(r.mode);
                 const status3S = status3SMap[r.imei] || '-';
+                
+                // Define cor da linha baseada no status
+                let rowStyle = { border: '1px solid #ccc', padding: 8 };
+                if (r.version === 'ERRO') {
+                  rowStyle.backgroundColor = '#ffebee'; // Vermelho claro para erro
+                } else if (r.version === 'NÃO ENCONTRADO') {
+                  rowStyle.backgroundColor = '#fff3e0'; // Laranja claro para não encontrado
+                }
+                
                 return (
                   <tr key={r.imei + idx}>
-                    <td style={{ border: '1px solid #ccc', padding: 8 }}>{r.imei}</td>
-                    <td style={{ border: '1px solid #ccc', padding: 8 }}>{r.version}</td>
-                    <td style={{ border: '1px solid #ccc', padding: 8 }}>{versaoAtual && r.version === versaoAtual ? 'Sim' : 'Não'}</td>
-                    <td style={{ border: '1px solid #ccc', padding: 8 }}>{r.lastime ? new Date(r.lastime).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' (GMT-3 Brasília)' : '-'}</td>
-                    <td style={{ border: '1px solid #ccc', padding: 8 }}>{r.online24h ? 'Sim' : 'Não'}</td>
-                    <td style={{ border: '1px solid #ccc', padding: 8 }}>{modeDebug}</td>
-                    <td style={{ border: '1px solid #ccc', padding: 8 }}>
+                    <td style={rowStyle}>{r.imei}</td>
+                    <td style={rowStyle}>
+                      <span style={r.version === 'ERRO' || r.version === 'NÃO ENCONTRADO' ? { color: '#f44336', fontWeight: 'bold' } : {}}>
+                        {r.version}
+                      </span>
+                    </td>
+                    <td style={rowStyle}>{versaoAtual && r.version === versaoAtual ? 'Sim' : 'Não'}</td>
+                    <td style={rowStyle}>{r.lastime ? new Date(r.lastime).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' (GMT-3 Brasília)' : '-'}</td>
+                    <td style={rowStyle}>{r.online24h ? 'Sim' : 'Não'}</td>
+                    <td style={rowStyle}>{modeDebug}</td>
+                    <td style={rowStyle}>
                       <div style={{ display: 'flex', alignItems: 'center' }}>
                         <BatteryIcon percent={percent} />
                         {percent !== null ? percent + '%' : '-'}
                       </div>
                     </td>
-                    <td style={{ border: '1px solid #ccc', padding: 8 }}>{status3S}</td>
+                    <td style={rowStyle}>{status3S}</td>
                   </tr>
                 );
               })}
@@ -486,6 +621,44 @@ function App() {
           </table>
         </div>
       )}
+      
+      {/* Seção para mostrar IMEIs que falharam */}
+      {imeisFalharam.length > 0 && (
+        <div style={{ 
+          marginTop: 20, 
+          padding: 15, 
+          backgroundColor: '#fff3cd', 
+          border: '1px solid #ffeaa7', 
+          borderRadius: 5 
+        }}>
+          <h3 style={{ color: '#856404', marginBottom: 10 }}>
+            ⚠️ IMEIs que falharam na verificação ({imeisFalharam.length})
+          </h3>
+          <p style={{ color: '#856404', fontSize: '14px', marginBottom: 10 }}>
+            Estes IMEIs não puderam ser consultados mesmo individualmente:
+          </p>
+          <div style={{ 
+            backgroundColor: '#fff', 
+            padding: 10, 
+            borderRadius: 3, 
+            border: '1px solid #ffeaa7',
+            maxHeight: 200,
+            overflowY: 'auto'
+          }}>
+            {imeisFalharam.map((imei, index) => (
+              <div key={index} style={{ 
+                padding: '2px 0', 
+                fontSize: '13px', 
+                fontFamily: 'monospace',
+                color: '#721c24'
+              }}>
+                {index + 1}. {imei}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      
       {/* Botão de upload do Excel para STATUS 3S */}
       <div style={{ marginBottom: 16 }}>
         <label style={{ background: '#1976d2', color: '#fff', padding: '8px 16px', borderRadius: 4, cursor: 'pointer' }}>
